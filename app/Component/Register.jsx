@@ -37,7 +37,7 @@ const Register = ({ onRegister, onBackToLogin }) => {
             });
 
             Alert.alert('Success', 'Account created successfully');
-            onRegister && onRegister();
+            onRegister && onRegister(email);
         } catch (error) {
             Alert.alert('Registration Failed', error.message);
         } finally {

@@ -11,7 +11,7 @@ const Login = ({ onLogin, onRegisterPress }) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       Alert.alert('Success', 'Logged in successfully');
-      onLogin && onLogin();
+      onLogin && onLogin(email);
     } catch (error) {
       Alert.alert('Login Failed', error.message);
     }

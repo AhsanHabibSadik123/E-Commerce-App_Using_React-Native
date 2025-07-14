@@ -12,6 +12,10 @@ import Cart from '../Component/Cart';
 import Account from '../Component/Account';
 import Login from '../Component/Login';
 import ProductDetailsScreen from '../Component/ProductDetailsScreen';
+import Payment from '../Component/payment';
+import AdminPanel from '../admin/AdminPanel';
+import ProductManagement from '../admin/ProductManagement';
+import OrderManagement from '../admin/OrderManagement';
 
 const TABS = [
   { name: 'Home', component: Home },
@@ -27,21 +31,29 @@ const Index = () => {
   const [cart, setCart] = useState([]);
   const [lastViewedProduct, setLastViewedProduct] = useState(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [adminScreen, setAdminScreen] = useState(null);
 
 
   const activeTabInfo = TABS.find(tab => tab.name === activeTab);
   const ActiveComponent = activeTabInfo ? activeTabInfo.component : () => <Text>Invalid Tab</Text>;
 
 if (!isLoggedIn && isRegistering) {
-  return <Register onRegister={() => {
+  return <Register onRegister={(email) => {
     setIsLoggedIn(true);
     setIsRegistering(false);
     setActiveTab('Home');
+    setUserEmail(email);
   }} onBackToLogin={() => setIsRegistering(false)} />;
 }
 
 if (!isLoggedIn) {
-  return <Login onLogin={() => { setIsLoggedIn(true); setActiveTab('Home'); }} onRegisterPress={() => setIsRegistering(true)} />;
+  return <Login onLogin={(email) => { 
+    setIsLoggedIn(true); 
+    setActiveTab('Home'); 
+    setUserEmail(email);
+  }} onRegisterPress={() => setIsRegistering(true)} />;
 }
 
   if (selectedProduct) {
@@ -72,6 +84,60 @@ if (!isLoggedIn) {
     );
   }
 
+  if (showPayment) {
+    return (
+      <Payment
+        cart={cart}
+        onBack={() => {
+          setShowPayment(false);
+          setActiveTab('Cart');
+        }}
+        onOrderComplete={() => {
+          setCart([]);
+          setShowPayment(false);
+          setActiveTab('Home');
+        }}
+      />
+    );
+  }
+
+  // Admin screens
+  if (adminScreen === 'AdminPanel') {
+    return (
+      <AdminPanel
+        onBack={() => {
+          setAdminScreen(null);
+          setActiveTab('Account');
+        }}
+        onNavigate={(screen) => setAdminScreen(screen)}
+      />
+    );
+  }
+
+  if (adminScreen === 'ProductManagement') {
+    return (
+      <ProductManagement
+        onBack={() => setAdminScreen('AdminPanel')}
+      />
+    );
+  }
+
+  if (adminScreen === 'OrderManagement') {
+    return (
+      <OrderManagement
+        onBack={() => setAdminScreen('AdminPanel')}
+      />
+    );
+  }
+
+  if (adminScreen === 'AddProduct') {
+    return (
+      <ProductManagement
+        onBack={() => setAdminScreen('AdminPanel')}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#ffe4ec' }}>
       <View style={{ flex: 1, backgroundColor: '#ffe4ec' }}>
@@ -84,7 +150,14 @@ if (!isLoggedIn) {
             }}
           />
         ) : activeTab === 'Account' ? (
-          <Account onLogout={() => setIsLoggedIn(false)} />
+          <Account 
+            onLogout={() => {
+              setIsLoggedIn(false);
+              setUserEmail('');
+            }} 
+            onAdminPanelPress={() => setAdminScreen('AdminPanel')}
+            userEmail={userEmail}
+          />
         ) : activeTab === 'Cart' ? (
           <Cart
             onBack={() => {
@@ -95,6 +168,9 @@ if (!isLoggedIn) {
             cart={cart}
             onDeleteItem={idx => {
               setCart(cart.filter((_, i) => i !== idx));
+            }}
+            onCheckout={() => {
+              setShowPayment(true);
             }}
           />
         ) : (
