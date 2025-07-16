@@ -5,33 +5,113 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  TextInput,
 } from "react-native";
 import React, { useState } from "react";
 import AntDesign from "@expo/vector-icons/AntDesign";
+import { db, auth } from "../../auth/firebase";
+import { collection, addDoc } from "firebase/firestore";
 
 const Payment = ({ onBack, cart = [], onOrderComplete }) => {
   const [selectedPayment, setSelectedPayment] = useState("cod");
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState({
+    fullName: "",
+    phoneNumber: "",
+    address: "",
+    city: "",
+    postalCode: "",
+  });
 
   const totalPrice = cart.reduce((total, item) => total + item.price, 0);
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (cart.length === 0) {
       Alert.alert("Error", "Your cart is empty!");
       return;
     }
 
-    Alert.alert(
-      "Order Confirmation",
-      `Your order has been placed successfully!\n\nTotal Amount: $${totalPrice.toFixed(2)}\nPayment Method: Cash on Delivery\n\nYour order will be delivered within 3-5 business days.`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            onOrderComplete();
-          },
+    // Validate delivery address
+    if (!deliveryAddress.fullName.trim()) {
+      Alert.alert("Error", "Please enter your full name");
+      return;
+    }
+    if (!deliveryAddress.phoneNumber.trim()) {
+      Alert.alert("Error", "Please enter your phone number");
+      return;
+    }
+    if (!deliveryAddress.address.trim()) {
+      Alert.alert("Error", "Please enter your delivery address");
+      return;
+    }
+    if (!deliveryAddress.city.trim()) {
+      Alert.alert("Error", "Please enter your city");
+      return;
+    }
+    if (!deliveryAddress.postalCode.trim()) {
+      Alert.alert("Error", "Please enter your postal code");
+      return;
+    }
+
+    setIsPlacingOrder(true);
+
+    try {
+      // Create order object
+      const orderData = {
+        userId: auth.currentUser?.uid || null,
+        userEmail: auth.currentUser?.email || null,
+        items: cart.map(item => ({
+          id: item.id,
+          title: item.title,
+          price: item.price,
+          image: item.image,
+          quantity: item.quantity || 1
+        })),
+        deliveryAddress: {
+          fullName: deliveryAddress.fullName.trim(),
+          phoneNumber: deliveryAddress.phoneNumber.trim(),
+          address: deliveryAddress.address.trim(),
+          city: deliveryAddress.city.trim(),
+          postalCode: deliveryAddress.postalCode.trim()
         },
-      ]
-    );
+        paymentMethod: selectedPayment,
+        totalAmount: totalPrice,
+        status: "pending",
+        orderDate: new Date().toISOString(),
+        estimatedDelivery: new Date(Date.now() + (5 * 24 * 60 * 60 * 1000)).toISOString() // 5 days from now
+      };
+
+      // Save order to Firestore
+      const docRef = await addDoc(collection(db, 'orders'), orderData);
+      
+      console.log("Order saved with ID: ", docRef.id);
+
+      Alert.alert(
+        "Order Confirmation",
+        `Your order has been placed successfully!\n\nOrder ID: ${docRef.id}\n\nDelivery To: ${deliveryAddress.fullName}\nAddress: ${deliveryAddress.address}, ${deliveryAddress.city}, ${deliveryAddress.postalCode}\nPhone: ${deliveryAddress.phoneNumber}\n\nTotal Amount: $${totalPrice.toFixed(2)}\nPayment Method: Cash on Delivery\n\nYour order will be delivered within 3-5 business days.`,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              onOrderComplete();
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("Error saving order: ", error);
+      Alert.alert(
+        "Error",
+        "Failed to place order. Please try again.",
+        [
+          {
+            text: "OK",
+          },
+        ]
+      );
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
   return (
@@ -64,6 +144,84 @@ const Payment = ({ onBack, cart = [], onOrderComplete }) => {
             <View style={styles.summaryRow}>
               <Text style={styles.totalLabel}>Total:</Text>
               <Text style={styles.totalValue}>${totalPrice.toFixed(2)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Delivery Address Form */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Delivery Address</Text>
+          <View style={styles.addressCard}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Full Name *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter your full name"
+                placeholderTextColor="#999"
+                value={deliveryAddress.fullName}
+                onChangeText={(text) =>
+                  setDeliveryAddress({ ...deliveryAddress, fullName: text })
+                }
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone Number *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter your phone number"
+                placeholderTextColor="#999"
+                value={deliveryAddress.phoneNumber}
+                onChangeText={(text) =>
+                  setDeliveryAddress({ ...deliveryAddress, phoneNumber: text })
+                }
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Address *</Text>
+              <TextInput
+                style={[styles.textInput, styles.multilineInput]}
+                placeholder="Enter your complete address"
+                placeholderTextColor="#999"
+                value={deliveryAddress.address}
+                onChangeText={(text) =>
+                  setDeliveryAddress({ ...deliveryAddress, address: text })
+                }
+                multiline={true}
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.inputLabel}>City *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="City"
+                  placeholderTextColor="#999"
+                  value={deliveryAddress.city}
+                  onChangeText={(text) =>
+                    setDeliveryAddress({ ...deliveryAddress, city: text })
+                  }
+                />
+              </View>
+
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.inputLabel}>Postal Code *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Postal Code"
+                  placeholderTextColor="#999"
+                  value={deliveryAddress.postalCode}
+                  onChangeText={(text) =>
+                    setDeliveryAddress({ ...deliveryAddress, postalCode: text })
+                  }
+                  keyboardType="numeric"
+                />
+              </View>
             </View>
           </View>
         </View>
@@ -158,9 +316,19 @@ const Payment = ({ onBack, cart = [], onOrderComplete }) => {
 
       {/* Place Order Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.placeOrderButton} onPress={handlePlaceOrder}>
+        <TouchableOpacity 
+          style={[
+            styles.placeOrderButton,
+            isPlacingOrder && styles.placeOrderButtonDisabled
+          ]} 
+          onPress={handlePlaceOrder}
+          disabled={isPlacingOrder}
+        >
           <Text style={styles.placeOrderButtonText}>
-            Place Order - ${totalPrice.toFixed(2)}
+            {isPlacingOrder 
+              ? "Placing Order..." 
+              : `Place Order - $${totalPrice.toFixed(2)}`
+            }
           </Text>
         </TouchableOpacity>
       </View>
@@ -268,6 +436,46 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#E96E6E",
+  },
+  addressCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#e0e0e0",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: "#f8f8f8",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#333",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  multilineInput: {
+    height: 80,
+    paddingTop: 12,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  halfWidth: {
+    width: "48%",
   },
   paymentOption: {
     backgroundColor: "#fff",
@@ -378,6 +586,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 8,
     elevation: 4,
+  },
+  placeOrderButtonDisabled: {
+    backgroundColor: "#ccc",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   placeOrderButtonText: {
     color: "#fff",

@@ -1,13 +1,22 @@
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../auth/firebase';
 import { checkAdminAccess } from '../admin/AdminAuth';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import AntDesign from '@expo/vector-icons/AntDesign';
 
-const Account = ({ onLogout, onAdminPanelPress, userEmail }) => {
-  const isAdmin = checkAdminAccess(userEmail);
+const Account = ({ onLogout, onAdminPanelPress, onProfilePress, userEmail }) => {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      const adminStatus = await checkAdminAccess();
+      setIsAdmin(adminStatus);
+    };
+    
+    checkAdmin();
+  }, []);
 
   return (
     <View style={styles.container}>

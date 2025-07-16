@@ -6,71 +6,103 @@ import {
   FlatList,
   Alert,
   Image,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import React, { useState, useEffect } from "react";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { db } from "../../auth/firebase";
+import { collection, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
 
 const OrderManagement = ({ onBack, orders = [] }) => {
-  const [orderList, setOrderList] = useState([
-    // Sample orders - in real app, this would come from your backend/database
-    {
-      id: 1001,
-      customerName: "John Doe",
-      customerEmail: "john@example.com",
-      items: [
-        { id: 1, title: "Jacket", price: 49.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567613/cwlk21f74nd9iamrlzkh.png" },
-        { id: 2, title: "Jeans", price: 39.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567612/qichw3wrcioebkvzudib.png" }
-      ],
-      totalAmount: 89.98,
-      orderDate: "2025-01-10",
-      status: "pending",
-      paymentMethod: "Cash on Delivery",
-      deliveryAddress: "123 Main St, City, State 12345",
-    },
-    {
-      id: 1002,
-      customerName: "Jane Smith",
-      customerEmail: "jane@example.com",
-      items: [
-        { id: 3, title: "Winter Coat", price: 99.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567612/smf81ubnfjennk9qbjm4.png" }
-      ],
-      totalAmount: 99.99,
-      orderDate: "2025-01-09",
-      status: "processing",
-      paymentMethod: "Cash on Delivery",
-      deliveryAddress: "456 Oak Ave, City, State 67890",
-    },
-    {
-      id: 1003,
-      customerName: "Mike Johnson",
-      customerEmail: "mike@example.com",
-      items: [
-        { id: 5, title: "Winter Shirts", price: 59.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567612/cvafl35dv9wzisdsgtd6.png" },
-        { id: 6, title: "Shirts With Jacket", price: 149.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567613/cwlk21f74nd9iamrlzkh.png" }
-      ],
-      totalAmount: 209.98,
-      orderDate: "2025-01-08",
-      status: "shipped",
-      paymentMethod: "Cash on Delivery",
-      deliveryAddress: "789 Pine St, City, State 54321",
-    },
-    {
-      id: 1004,
-      customerName: "Sarah Wilson",
-      customerEmail: "sarah@example.com",
-      items: [
-        { id: 4, title: "Acrylic Sweater", price: 29.99, image: "https://res.cloudinary.com/dlc5c1ycl/image/upload/v1710567612/vy2q98s8ucsywwxjx2cf.png" }
-      ],
-      totalAmount: 29.99,
-      orderDate: "2025-01-07",
-      status: "delivered",
-      paymentMethod: "Cash on Delivery",
-      deliveryAddress: "321 Elm St, City, State 98765",
-    },
-  ]);
-
+  const [orderList, setOrderList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
+
+  // Fetch orders from Firestore
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      const querySnapshot = await getDocs(collection(db, 'orders'));
+      const fetchedOrders = [];
+      
+      querySnapshot.forEach((doc) => {
+        const orderData = doc.data();
+        fetchedOrders.push({
+          id: doc.id,
+          docId: doc.id,
+          customerName: orderData.deliveryAddress?.fullName || 'Unknown Customer',
+          customerEmail: orderData.userEmail || 'No Email',
+          items: orderData.items || [],
+          totalAmount: orderData.totalAmount || 0,
+          orderDate: orderData.orderDate ? new Date(orderData.orderDate).toLocaleDateString() : 'Unknown Date',
+          orderDateRaw: orderData.orderDate || new Date().toISOString(), // Keep raw date for sorting
+          status: orderData.status || 'pending',
+          paymentMethod: orderData.paymentMethod === 'cod' ? 'Cash on Delivery' : orderData.paymentMethod,
+          deliveryAddress: orderData.deliveryAddress ? 
+            `${orderData.deliveryAddress.address}, ${orderData.deliveryAddress.city}, ${orderData.deliveryAddress.postalCode}` : 
+            'No Address',
+          phoneNumber: orderData.deliveryAddress?.phoneNumber || 'No Phone',
+          userId: orderData.userId || null,
+          estimatedDelivery: orderData.estimatedDelivery || null
+        });
+      });
+      
+      // Sort orders by date (newest first) using raw date
+      fetchedOrders.sort((a, b) => new Date(b.orderDateRaw) - new Date(a.orderDateRaw));
+      setOrderList(fetchedOrders);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      Alert.alert('Error', 'Failed to load orders. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle pull-to-refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchOrders();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchOrders();
+    
+    // Set up real-time listener for orders
+    const unsubscribe = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      const orders = [];
+      snapshot.forEach((doc) => {
+        const orderData = doc.data();
+        orders.push({
+          id: doc.id,
+          docId: doc.id,
+          customerName: orderData.deliveryAddress?.fullName || 'Unknown Customer',
+          customerEmail: orderData.userEmail || 'No Email',
+          items: orderData.items || [],
+          totalAmount: orderData.totalAmount || 0,
+          orderDate: orderData.orderDate ? new Date(orderData.orderDate).toLocaleDateString() : 'Unknown Date',
+          orderDateRaw: orderData.orderDate || new Date().toISOString(), // Keep raw date for sorting
+          status: orderData.status || 'pending',
+          paymentMethod: orderData.paymentMethod === 'cod' ? 'Cash on Delivery' : orderData.paymentMethod,
+          deliveryAddress: orderData.deliveryAddress ? 
+            `${orderData.deliveryAddress.address}, ${orderData.deliveryAddress.city}, ${orderData.deliveryAddress.postalCode}` : 
+            'No Address',
+          phoneNumber: orderData.deliveryAddress?.phoneNumber || 'No Phone',
+          userId: orderData.userId || null,
+          estimatedDelivery: orderData.estimatedDelivery || null
+        });
+      });
+      
+      // Sort orders by date (newest first) using raw date
+      orders.sort((a, b) => new Date(b.orderDateRaw) - new Date(a.orderDateRaw));
+      setOrderList(orders);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const statusColors = {
     pending: "#FF9800",
@@ -92,7 +124,7 @@ const OrderManagement = ({ onBack, orders = [] }) => {
     (order) => filterStatus === "all" || order.status === filterStatus
   );
 
-  const updateOrderStatus = (orderId, newStatus) => {
+  const updateOrderStatus = async (orderId, newStatus) => {
     Alert.alert(
       "Update Order Status",
       `Change status to "${newStatus}"?`,
@@ -100,13 +132,25 @@ const OrderManagement = ({ onBack, orders = [] }) => {
         { text: "Cancel", style: "cancel" },
         {
           text: "Update",
-          onPress: () => {
-            setOrderList(
-              orderList.map((order) =>
-                order.id === orderId ? { ...order, status: newStatus } : order
-              )
-            );
-            Alert.alert("Success", "Order status updated successfully!");
+          onPress: async () => {
+            try {
+              // Update in Firestore
+              await updateDoc(doc(db, 'orders', orderId), {
+                status: newStatus,
+                updatedAt: new Date().toISOString()
+              });
+              
+              // Update local state
+              setOrderList(
+                orderList.map((order) =>
+                  order.id === orderId ? { ...order, status: newStatus } : order
+                )
+              );
+              Alert.alert("Success", "Order status updated successfully!");
+            } catch (error) {
+              console.error('Error updating order status:', error);
+              Alert.alert("Error", "Failed to update order status. Please try again.");
+            }
           },
         },
       ]
@@ -120,7 +164,6 @@ const OrderManagement = ({ onBack, orders = [] }) => {
       processing: orderList.filter((o) => o.status === "processing").length,
       shipped: orderList.filter((o) => o.status === "shipped").length,
       delivered: orderList.filter((o) => o.status === "delivered").length,
-      totalRevenue: orderList.reduce((sum, order) => sum + order.totalAmount, 0),
     };
     return stats;
   };
@@ -131,7 +174,7 @@ const OrderManagement = ({ onBack, orders = [] }) => {
     <View style={styles.orderCard}>
       <View style={styles.orderHeader}>
         <View style={styles.orderInfo}>
-          <Text style={styles.orderId}>Order #{item.id}</Text>
+          <Text style={styles.orderId}>Order #{item.id.substring(0, 8)}</Text>
           <Text style={styles.orderDate}>{item.orderDate}</Text>
         </View>
         <View
@@ -147,6 +190,8 @@ const OrderManagement = ({ onBack, orders = [] }) => {
       <View style={styles.customerInfo}>
         <Text style={styles.customerName}>{item.customerName}</Text>
         <Text style={styles.customerEmail}>{item.customerEmail}</Text>
+        <Text style={styles.customerPhone}>📞 {item.phoneNumber}</Text>
+        <Text style={styles.deliveryAddress}>📍 {item.deliveryAddress}</Text>
       </View>
 
       <View style={styles.itemsSection}>
@@ -156,7 +201,8 @@ const OrderManagement = ({ onBack, orders = [] }) => {
             <Image source={{ uri: product.image }} style={styles.productImage} />
             <View style={styles.productDetails}>
               <Text style={styles.productName}>{product.title}</Text>
-              <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
+              <Text style={styles.productPrice}>${(product.price || 0).toFixed(2)}</Text>
+              <Text style={styles.productQuantity}>Qty: {product.quantity || 1}</Text>
             </View>
           </View>
         ))}
@@ -165,7 +211,7 @@ const OrderManagement = ({ onBack, orders = [] }) => {
       <View style={styles.orderFooter}>
         <View style={styles.totalSection}>
           <Text style={styles.totalLabel}>Total: </Text>
-          <Text style={styles.totalAmount}>${item.totalAmount.toFixed(2)}</Text>
+          <Text style={styles.totalAmount}>${(item.totalAmount || 0).toFixed(2)}</Text>
         </View>
         <View style={styles.paymentMethod}>
           <Text style={styles.paymentText}>{item.paymentMethod}</Text>
@@ -174,7 +220,10 @@ const OrderManagement = ({ onBack, orders = [] }) => {
 
       <View style={styles.actionButtons}>
         <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: "#2196F3" }]}
+          style={[
+            styles.actionBtn, 
+            { backgroundColor: item.status === "delivered" ? "#ccc" : "#2196F3" }
+          ]}
           onPress={() => updateOrderStatus(item.id, "processing")}
           disabled={item.status === "delivered"}
         >
@@ -182,7 +231,10 @@ const OrderManagement = ({ onBack, orders = [] }) => {
           <Text style={styles.actionText}>Process</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: "#9C27B0" }]}
+          style={[
+            styles.actionBtn, 
+            { backgroundColor: item.status === "delivered" ? "#ccc" : "#9C27B0" }
+          ]}
           onPress={() => updateOrderStatus(item.id, "shipped")}
           disabled={item.status === "delivered"}
         >
@@ -190,7 +242,10 @@ const OrderManagement = ({ onBack, orders = [] }) => {
           <Text style={styles.actionText}>Ship</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: "#4CAF50" }]}
+          style={[
+            styles.actionBtn, 
+            { backgroundColor: item.status === "delivered" ? "#ccc" : "#4CAF50" }
+          ]}
           onPress={() => updateOrderStatus(item.id, "delivered")}
           disabled={item.status === "delivered"}
         >
@@ -210,63 +265,87 @@ const OrderManagement = ({ onBack, orders = [] }) => {
         <Text style={styles.title}>Order Management</Text>
       </View>
 
-      {/* Stats Section */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{stats.total}</Text>
-          <Text style={styles.statLabel}>Total Orders</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#E96E6E" />
+          <Text style={styles.loadingText}>Loading orders...</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{stats.pending}</Text>
-          <Text style={styles.statLabel}>Pending</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{stats.delivered}</Text>
-          <Text style={styles.statLabel}>Delivered</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>${stats.totalRevenue.toFixed(0)}</Text>
-          <Text style={styles.statLabel}>Revenue</Text>
-        </View>
-      </View>
+      ) : (
+        <>
+          {/* Stats Section */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.total}</Text>
+              <Text style={styles.statLabel}>Total Orders</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.pending}</Text>
+              <Text style={styles.statLabel}>Pending</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.delivered}</Text>
+              <Text style={styles.statLabel}>Delivered</Text>
+            </View>
+          </View>
 
-      {/* Filter Section */}
-      <View style={styles.filterContainer}>
-        <FlatList
-          horizontal
-          data={statusOptions}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.filterButton,
-                filterStatus === item.key && styles.activeFilterButton,
-              ]}
-              onPress={() => setFilterStatus(item.key)}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  filterStatus === item.key && styles.activeFilterText,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item) => item.key}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20 }}
-        />
-      </View>
+          {/* Filter Section */}
+          <View style={styles.filterContainer}>
+            <FlatList
+              horizontal
+              data={statusOptions}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.filterButton,
+                    filterStatus === item.key && styles.activeFilterButton,
+                  ]}
+                  onPress={() => setFilterStatus(item.key)}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      filterStatus === item.key && styles.activeFilterText,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.key}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20 }}
+            />
+          </View>
 
-      <FlatList
-        data={filteredOrders}
-        renderItem={renderOrderItem}
-        keyExtractor={(item) => item.id.toString()}
-        style={styles.ordersList}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
+          <FlatList
+            data={filteredOrders}
+            renderItem={renderOrderItem}
+            keyExtractor={(item) => item.id.toString()}
+            style={styles.ordersList}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#E96E6E']}
+                tintColor="#E96E6E"
+              />
+            }
+            ListEmptyComponent={
+              !loading && (
+                <View style={styles.emptyContainer}>
+                  <MaterialIcons name="shopping-basket" size={64} color="#ccc" />
+                  <Text style={styles.emptyText}>No orders found</Text>
+                  <Text style={styles.emptySubtext}>
+                    Orders will appear here once customers place them
+                  </Text>
+                </View>
+              )
+            }
+          />
+        </>
+      )}
     </View>
   );
 };
@@ -319,6 +398,37 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     flex: 1,
     textAlign: "center",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff3f8",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#666",
+    fontWeight: "500",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#666",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: "#999",
+    textAlign: "center",
+    paddingHorizontal: 20,
   },
   statsContainer: {
     flexDirection: "row",
@@ -431,6 +541,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
   },
+  customerPhone: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+  },
+  deliveryAddress: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+  },
   itemsSection: {
     marginBottom: 12,
   },
@@ -464,6 +584,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#E96E6E",
     fontWeight: "600",
+  },
+  productQuantity: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
   },
   orderFooter: {
     flexDirection: "row",

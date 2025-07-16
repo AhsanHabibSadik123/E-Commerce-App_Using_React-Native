@@ -1,8 +1,9 @@
 // This is my Register.jsx file
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { auth } from '../../auth/firebase';
+import { auth, db } from '../../auth/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 
 const Register = ({ onRegister, onBackToLogin }) => {
     const [email, setEmail] = useState('');
@@ -10,6 +11,7 @@ const Register = ({ onRegister, onBackToLogin }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [name, setName] = useState('');
+    const [phone, setPhone] = useState('');
 
     const handleRegister = async () => {
         if (!name.trim()) {
@@ -18,6 +20,10 @@ const Register = ({ onRegister, onBackToLogin }) => {
         }
         if (!email.trim()) {
             Alert.alert('Validation Error', 'Email is required.');
+            return;
+        }
+        if (!phone.trim()) {
+            Alert.alert('Validation Error', 'Phone number is required.');
             return;
         }
         if (password.length < 6) {
@@ -32,8 +38,18 @@ const Register = ({ onRegister, onBackToLogin }) => {
         setLoading(true);
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await updateProfile(userCredential.user, {
+            const user = userCredential.user;
+            
+            await updateProfile(user, {
                 displayName: name,
+            });
+
+            // Save user data to Firestore 'users' collection
+            await setDoc(doc(db, 'users', user.uid), {
+                displayName: name.trim(),
+                email: email.toLowerCase().trim(),
+                isAdmin: false,
+                phone: phone.trim()
             });
 
             Alert.alert('Success', 'Account created successfully');
@@ -70,6 +86,15 @@ const Register = ({ onRegister, onBackToLogin }) => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+            />
+
+            <TextInput
+                style={styles.input}
+                placeholder="Phone Number"
+                placeholderTextColor="#888"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
             />
 
             <TextInput

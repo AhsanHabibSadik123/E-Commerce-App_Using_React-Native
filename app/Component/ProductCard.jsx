@@ -1,16 +1,15 @@
 import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import React from 'react'
 import AntDesign from '@expo/vector-icons/AntDesign';
-const ProductCard = ({ product, onPress }) => {
-    const [isFavorite, setIsFavorite] = useState(false);
+const ProductCard = ({ product, onPress, isFavorite, onToggleFavorite }) => {
     return (
         <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.85}>
             <Image source={{ uri: product.image }} style={styles.coverImage} />
             <View style={styles.textContainer}>
                 <Text style={styles.productName}>{product.title}</Text>
-                <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
+                <Text style={styles.productPrice}>${(product.price || 0).toFixed(2)}</Text>
             </View>
-            <TouchableOpacity onPress={() => setIsFavorite(!isFavorite)} style={styles.heartContainer}>
+            <TouchableOpacity onPress={onToggleFavorite} style={styles.heartContainer}>
                 {
                     isFavorite ? (
                         <AntDesign name="heart" size={24} color="#eb4f4f" />
@@ -20,7 +19,6 @@ const ProductCard = ({ product, onPress }) => {
                 }
             </TouchableOpacity>
         </TouchableOpacity>
-
     )
 }
 
@@ -28,16 +26,16 @@ export default ProductCard
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
+        width: '100%',
         marginTop: 20,
     },
     coverImage: {
         marginTop: 10,
         height: 250,
-        width: '90%',
+        width: '88%',
         borderRadius: 20,
         marginVertical: 10,
-        marginLeft: 10,
+        alignSelf: 'center',
     },
     productName: {
         fontSize: 18,
@@ -63,7 +61,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderRadius: 17,
         position: 'absolute',
-        top: '20',
-        right: '20',
+        top: 20,
+        right: 20,
     },
 })

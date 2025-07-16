@@ -13,64 +13,233 @@ import {
 import React, { useState, useEffect } from "react";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Data from "../data/Data.json";
+import { db } from "../../auth/firebase";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from "firebase/firestore";
+
+// Move ProductForm outside to prevent re-creation
+const ProductForm = ({ 
+  visible, 
+  editingProduct, 
+  formData, 
+  setFormData, 
+  onClose, 
+  onSubmit 
+}) => (
+  <Modal
+    visible={visible}
+    animationType="slide"
+    transparent={true}
+  >
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>
+            {editingProduct ? "Edit Product" : "Add New Product"}
+          </Text>
+          <TouchableOpacity onPress={onClose}>
+            <AntDesign name="close" size={24} color="#333" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.formContainer}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Product Title</Text>
+            <TextInput
+              style={styles.textInput}
+              value={formData.title}
+              onChangeText={(text) => setFormData({ ...formData, title: text })}
+              placeholder="Enter product title"
+              placeholderTextColor="#999"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Price ($)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={formData.price}
+              onChangeText={(text) => setFormData({ ...formData, price: text })}
+              placeholder="Enter price"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Image URL</Text>
+            <TextInput
+              style={[styles.textInput, styles.urlInput]}
+              value={formData.image}
+              onChangeText={(text) => setFormData({ ...formData, image: text })}
+              placeholder="Enter image URL"
+              placeholderTextColor="#999"
+              multiline
+            />
+          </View>
+
+          {formData.image && (
+            <View style={styles.imagePreview}>
+              <Text style={styles.inputLabel}>Preview:</Text>
+              <Image
+                source={{ uri: formData.image }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            </View>
+          )}
+        </ScrollView>
+
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={[styles.modalButton, styles.cancelButton]}
+            onPress={onClose}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalButton, styles.saveButton]}
+            onPress={onSubmit}
+          >
+            <Text style={styles.saveButtonText}>
+              {editingProduct ? "Update" : "Add Product"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
 
 const ProductManagement = ({ onBack }) => {
-  const [products, setProducts] = useState(Data.products);
+  const [products, setProducts] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // Form state for adding/editing products
   const [formData, setFormData] = useState({
     title: "",
     price: "",
     image: "",
   });
 
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      const productsCollection = collection(db, 'products');
+      const q = query(productsCollection, orderBy('id', 'asc'));
+      const querySnapshot = await getDocs(q);
+      
+      const firestoreProducts = [];
+      querySnapshot.forEach((doc) => {
+        firestoreProducts.push({ docId: doc.id, ...doc.data() });
+      });
+
+      if (firestoreProducts.length > 0) {
+        setProducts(firestoreProducts);
+      } else {
+        // If no products in Firestore, use local data as fallback
+        setProducts(Data.products);
+      }
+    } catch (error) {
+      console.error('Error loading products:', error);
+      // Fallback to local data
+      setProducts(Data.products);
+      Alert.alert('Info', 'Using local product data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredProducts = products.filter((product) =>
     product.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!formData.title || !formData.price || !formData.image) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
 
-    const newProduct = {
-      id: Math.max(...products.map((p) => p.id)) + 1,
-      title: formData.title,
-      price: parseFloat(formData.price),
-      image: formData.image,
-    };
+    try {
+      // Get the next ID
+      const nextId = products.length > 0 ? Math.max(...products.map((p) => p.id)) + 1 : 1;
+      
+      // Validate price input
+      const priceValue = parseFloat(formData.price);
+      if (isNaN(priceValue) || priceValue < 0) {
+        Alert.alert("Error", "Please enter a valid price (positive number)");
+        return;
+      }
 
-    setProducts([...products, newProduct]);
-    setFormData({ title: "", price: "", image: "" });
-    setShowAddModal(false);
-    Alert.alert("Success", "Product added successfully!");
+      const newProduct = {
+        id: nextId,
+        title: formData.title.trim(),
+        price: priceValue,
+        image: formData.image.trim(),
+      };
+
+      // Save to Firestore
+      const docRef = await addDoc(collection(db, 'products'), newProduct);
+      
+      // Update local state
+      const productWithDocId = { ...newProduct, docId: docRef.id };
+      setProducts([...products, productWithDocId]);
+      
+      // Reset form
+      setFormData({ title: "", price: "", image: "" });
+      setShowAddModal(false);
+      
+      Alert.alert("Success", "Product added successfully!");
+    } catch (error) {
+      console.error('Error adding product:', error);
+      Alert.alert("Error", "Failed to add product. Please try again.");
+    }
   };
 
-  const handleEditProduct = () => {
+  const handleEditProduct = async () => {
     if (!formData.title || !formData.price || !formData.image) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
 
-    const updatedProducts = products.map((product) =>
-      product.id === editingProduct.id
-        ? {
-            ...product,
-            title: formData.title,
-            price: parseFloat(formData.price),
-            image: formData.image,
-          }
-        : product
-    );
+    try {
+      // Validate price input
+      const priceValue = parseFloat(formData.price);
+      if (isNaN(priceValue) || priceValue < 0) {
+        Alert.alert("Error", "Please enter a valid price (positive number)");
+        return;
+      }
 
-    setProducts(updatedProducts);
-    setEditingProduct(null);
-    setFormData({ title: "", price: "", image: "" });
-    Alert.alert("Success", "Product updated successfully!");
+      const updatedProduct = {
+        id: editingProduct.id,
+        title: formData.title.trim(),
+        price: priceValue,
+        image: formData.image.trim(),
+      };
+
+      // Update in Firestore if product has docId
+      if (editingProduct.docId) {
+        await updateDoc(doc(db, 'products', editingProduct.docId), updatedProduct);
+      }
+
+      // Update local state
+      const updatedProducts = products.map((product) =>
+        product.id === editingProduct.id ? { ...product, ...updatedProduct } : product
+      );
+
+      setProducts(updatedProducts);
+      setEditingProduct(null);
+      setFormData({ title: "", price: "", image: "" });
+      Alert.alert("Success", "Product updated successfully!");
+    } catch (error) {
+      console.error('Error updating product:', error);
+      Alert.alert("Error", "Failed to update product. Please try again.");
+    }
   };
 
   const handleDeleteProduct = (productId) => {
@@ -82,9 +251,22 @@ const ProductManagement = ({ onBack }) => {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            setProducts(products.filter((p) => p.id !== productId));
-            Alert.alert("Success", "Product deleted successfully!");
+          onPress: async () => {
+            try {
+              const productToDelete = products.find(p => p.id === productId);
+              
+              // Delete from Firestore if product has docId
+              if (productToDelete && productToDelete.docId) {
+                await deleteDoc(doc(db, 'products', productToDelete.docId));
+              }
+
+              // Update local state
+              setProducts(products.filter((p) => p.id !== productId));
+              Alert.alert("Success", "Product deleted successfully!");
+            } catch (error) {
+              console.error('Error deleting product:', error);
+              Alert.alert("Error", "Failed to delete product. Please try again.");
+            }
           },
         },
       ]
@@ -95,9 +277,23 @@ const ProductManagement = ({ onBack }) => {
     setEditingProduct(product);
     setFormData({
       title: product.title,
-      price: product.price.toString(),
+      price: (product.price || 0).toString(),
       image: product.image,
     });
+  };
+
+  const closeModal = () => {
+    setShowAddModal(false);
+    setEditingProduct(null);
+    setFormData({ title: "", price: "", image: "" });
+  };
+
+  const handleSubmit = () => {
+    if (editingProduct) {
+      handleEditProduct();
+    } else {
+      handleAddProduct();
+    }
   };
 
   const renderProductItem = ({ item }) => (
@@ -105,7 +301,7 @@ const ProductManagement = ({ onBack }) => {
       <Image source={{ uri: item.image }} style={styles.productImage} />
       <View style={styles.productInfo}>
         <Text style={styles.productTitle}>{item.title}</Text>
-        <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
+        <Text style={styles.productPrice}>${(item.price || 0).toFixed(2)}</Text>
         <Text style={styles.productId}>ID: {item.id}</Text>
       </View>
       <View style={styles.productActions}>
@@ -123,102 +319,6 @@ const ProductManagement = ({ onBack }) => {
         </TouchableOpacity>
       </View>
     </View>
-  );
-
-  const ProductForm = () => (
-    <Modal
-      visible={showAddModal || editingProduct !== null}
-      animationType="slide"
-      transparent={true}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {editingProduct ? "Edit Product" : "Add New Product"}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setShowAddModal(false);
-                setEditingProduct(null);
-                setFormData({ title: "", price: "", image: "" });
-              }}
-            >
-              <AntDesign name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.formContainer}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Product Title</Text>
-              <TextInput
-                style={styles.textInput}
-                value={formData.title}
-                onChangeText={(text) => setFormData({ ...formData, title: text })}
-                placeholder="Enter product title"
-                placeholderTextColor="#999"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Price ($)</Text>
-              <TextInput
-                style={styles.textInput}
-                value={formData.price}
-                onChangeText={(text) => setFormData({ ...formData, price: text })}
-                placeholder="Enter price"
-                placeholderTextColor="#999"
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Image URL</Text>
-              <TextInput
-                style={[styles.textInput, styles.urlInput]}
-                value={formData.image}
-                onChangeText={(text) => setFormData({ ...formData, image: text })}
-                placeholder="Enter image URL"
-                placeholderTextColor="#999"
-                multiline
-              />
-            </View>
-
-            {formData.image && (
-              <View style={styles.imagePreview}>
-                <Text style={styles.inputLabel}>Preview:</Text>
-                <Image
-                  source={{ uri: formData.image }}
-                  style={styles.previewImage}
-                  resizeMode="cover"
-                />
-              </View>
-            )}
-          </ScrollView>
-
-          <View style={styles.modalActions}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => {
-                setShowAddModal(false);
-                setEditingProduct(null);
-                setFormData({ title: "", price: "", image: "" });
-              }}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.saveButton]}
-              onPress={editingProduct ? handleEditProduct : handleAddProduct}
-            >
-              <Text style={styles.saveButtonText}>
-                {editingProduct ? "Update" : "Add Product"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 
   return (
@@ -255,16 +355,28 @@ const ProductManagement = ({ onBack }) => {
         </Text>
       </View>
 
-      <FlatList
-        data={filteredProducts}
-        renderItem={renderProductItem}
-        keyExtractor={(item) => item.id.toString()}
-        style={styles.productList}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading products...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredProducts}
+          renderItem={renderProductItem}
+          keyExtractor={(item) => item.id.toString()}
+          style={styles.productList}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        />
+      )}
+      <ProductForm 
+        visible={showAddModal || editingProduct !== null}
+        editingProduct={editingProduct}
+        formData={formData}
+        setFormData={setFormData}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
       />
-
-      <ProductForm />
     </View>
   );
 };
@@ -512,5 +624,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 10,
   },
 });

@@ -5,15 +5,60 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Feather from "@expo/vector-icons/Feather";
+import { db } from "../../auth/firebase";
+import { collection, getDocs, onSnapshot } from "firebase/firestore";
 
 const { width } = Dimensions.get("window");
 
 const AdminPanel = ({ onBack, onNavigate }) => {
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch data from Firestore
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch products count
+      const productsSnapshot = await getDocs(collection(db, 'products'));
+      setTotalProducts(productsSnapshot.size);
+      
+      // Fetch orders count
+      const ordersSnapshot = await getDocs(collection(db, 'orders'));
+      setTotalOrders(ordersSnapshot.size);
+      
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    
+    // Set up real-time listeners
+    const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      setTotalProducts(snapshot.size);
+    });
+    
+    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      setTotalOrders(snapshot.size);
+    });
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeOrders();
+    };
+  }, []);
+
   const adminOptions = [
     {
       id: 1,
@@ -72,11 +117,19 @@ const AdminPanel = ({ onBack, onNavigate }) => {
 
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>24</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#E96E6E" />
+            ) : (
+              <Text style={styles.statNumber}>{totalProducts}</Text>
+            )}
             <Text style={styles.statLabel}>Total Products</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>156</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#E96E6E" />
+            ) : (
+              <Text style={styles.statNumber}>{totalOrders}</Text>
+            )}
             <Text style={styles.statLabel}>Total Orders</Text>
           </View>
         </View>
